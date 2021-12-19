@@ -9,7 +9,7 @@ class ObservableValue {
   }
   removeObserver(observer) {
     const index = this.observers.findIndex((o) => o === observer);
-    this.observers.splice(index, 0, 1);
+    this.observers.splice(index, 1);
   }
   trigger() {
     this.observers.forEach((observer) => observer());
@@ -17,7 +17,7 @@ class ObservableValue {
 }
 
 const globalState = {
-  trackingObserver: undefined,
+  trackingDerivation: undefined,
 };
 
 const $mobx = Symbol("mobx administration");
@@ -38,9 +38,10 @@ function observable(instance) {
       enumerable: true,
       get() {
         const observableValue = instance[$mobx][key];
-        const observer = globalState.trackingObserver;
-        if (observer) {
-          observableValue.addObserver(observer);
+        const derivation = globalState.trackingDerivation;
+        if (derivation) {
+          observableValue.addObserver(derivation.observer);
+          derivation.observing.push(observableValue);
         }
         return observableValue.value;
       },
@@ -55,18 +56,34 @@ function observable(instance) {
 }
 
 function autorun(observer) {
-  globalState.trackingObserver = observer;
+  const derivation = {
+    observing: [],
+    observer,
+  };
+
+  globalState.trackingDerivation = derivation;
   observer();
-  globalState.trackingObserver = undefined;
+  globalState.trackingDerivation = undefined;
+
+  function dispose() {
+    const observableValues = derivation.observing;
+    (observableValues || []).forEach((item) => {
+      item.removeObserver(observer);
+    });
+    derivation.observing = [];
+  }
+
+  return dispose;
 }
 
 const message = observable({
   title: "title-01",
 });
 
-autorun(() => {
+const dispose = autorun(() => {
   console.log(message.title);
 });
 
 message.title = "title-02";
+dispose();
 message.title = "title-03";
